@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+
+
+  web:
+    container_name: mon_apache_server
+    build: ./web
+    ports:
+      - "80:80"
+    volumes:
+      - ./src:/var/www/html
+    depends_on:
+      - db
+    networks:
+      - mon-reseau
+
+  db:
+    container_name: mon_mysql_server
+    image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ma_base
+      MYSQL_USER: user_app
+      MYSQL_PASSWORD: user_password
+    volumes:
+      - db_data:/var/lib/mysql
+
+      - ./mysql-init:/docker-entrypoint-initdb.d
+    networks:
+      - mon-reseau
+
+
+
+  mysql-exporter:
+    image: prom/mysqld-exporter
+    container_name: exporter_mysql
+    environment:
+      # Chaîne de connexion : user:password@(nom_conteneur_db:3306)/
+      DATA_SOURCE_NAME: exporter:exporterpassword@(mon_mysql_server:3306)/
+    depends_on:
+      - db
+    networks:
+      - mon-reseau
+
+  apache-exporter:
+    image: bitnami/apache-exporter:latest
+    container_name: exporter_apache
+    command: --scrape_uri="http://mon_apache_server/server-status/?auto"
+    depends_on:
+      - web
+    networks:
+      - mon-reseau
+
+
+
+  prometheus:
+    image: prom/prometheus
+    container_name: mon_prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - mon-reseau
+
+  grafana:
+    image: grafana/grafana
+    container_name: mon_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin 
+    depends_on:
+      - prometheus
+    networks:
+      - mon-reseau
+
+volumes:
+  db_data:
+
+networks:
+  mon-reseau:
