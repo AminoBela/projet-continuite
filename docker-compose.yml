@@ -1,85 +1,126 @@
 version: '3.8'
 
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  prometheus_data:
+  grafana_data:
+
 services:
-
-
+  # Serveur Web Apache + PHP
   web:
-    container_name: mon_apache_server
-    build: ./web
+    image: php:8.2-apache
+    container_name: apache_web
     ports:
-      - "80:80"
+      - "8080:80"
     volumes:
-      - ./src:/var/www/html
+      - ./app:/var/www/html
     depends_on:
-      - db
+      - mysql
     networks:
-      - mon-reseau
+      - monitoring
+    command: >
+      bash -c "docker-php-ext-install mysqli && apache2-foreground"
 
-  db:
-    container_name: mon_mysql_server
+  # Base de données MySQL
+  mysql:
     image: mysql:8.0
-    command: --default-authentication-plugin=mysql_native_password
-    restart: always
+    container_name: mysql_db
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: ma_base
-      MYSQL_USER: user_app
-      MYSQL_PASSWORD: user_password
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
     volumes:
-      - db_data:/var/lib/mysql
-
-      - ./mysql-init:/docker-entrypoint-initdb.d
+      - mysql_data:/var/lib/mysql
     networks:
-      - mon-reseau
+      - monitoring
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-
-
-  mysql-exporter:
-    image: prom/mysqld-exporter
-    container_name: exporter_mysql
-    environment:
-      # Chaîne de connexion : user:password@(nom_conteneur_db:3306)/
-      DATA_SOURCE_NAME: exporter:exporterpassword@(mon_mysql_server:3306)/
-    depends_on:
-      - db
-    networks:
-      - mon-reseau
-
-  apache-exporter:
-    image: bitnami/apache-exporter:latest
-    container_name: exporter_apache
-    command: --scrape_uri="http://mon_apache_server/server-status/?auto"
-    depends_on:
-      - web
-    networks:
-      - mon-reseau
-
-
-
+  # Prometheus pour la métrologie
   prometheus:
-    image: prom/prometheus
-    container_name: mon_prometheus
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    image: prom/prometheus:latest
+    container_name: prometheus
     ports:
       - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
     networks:
-      - mon-reseau
+      - monitoring
 
+  # Grafana pour les graphes
   grafana:
-    image: grafana/grafana
-    container_name: mon_grafana
+    image: grafana/grafana:latest
+    container_name: grafana
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin 
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
     networks:
-      - mon-reseau
+      - monitoring
 
-volumes:
-  db_data:
+  # MySQL Exporter pour Prometheus
+  mysql-exporter:
+    image: prom/mysqld-exporter:v0.16.0
+    container_name: mysql_exporter
+    ports:
+      - "9104:9104"
+    environment:
+      MYSQLD_EXPORTER_PASSWORD: password
+    depends_on:
+      - mysql
+    networks:
+      - monitoring
+    restart: unless-stopped
+    command:
+      - --mysqld.username=user
+      - --mysqld.address=mysql:3306
+      - --collect.info_schema.tablestats
+      - --collect.info_schema.userstats
 
-networks:
-  mon-reseau:
+  # Node Exporter pour métriques système
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node_exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - monitoring
+
+  # Rundeck pour l'automatisation
+  rundeck:
+    image: rundeck/rundeck:4.17.0
+    container_name: rundeck
+    ports:
+      - "4440:4440"
+    environment:
+      RUNDECK_GRAILS_URL: http://localhost:4440
+      RUNDECK_DATABASE_DRIVER: org.mariadb.jdbc.Driver
+      RUNDECK_DATABASE_URL: jdbc:mysql://mysql:3306/rundeck?autoReconnect=true&useSSL=false&allowPublicKeyRetrieval=true
+      RUNDECK_DATABASE_USERNAME: user
+      RUNDECK_DATABASE_PASSWORD: password
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./rundeck/data:/home/rundeck/server/data
+    depends_on:
+      - mysql
+    networks:
+      - monitoring
+    restart: unless-stopped
