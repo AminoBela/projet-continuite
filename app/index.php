@@ -11,7 +11,7 @@ try {
     if ($conn->connect_error) {
         throw new Exception($conn->connect_error);
     }
-    echo "<p style='color:green'>✅ Connexion MySQL réussie !</p>";
+    echo "<p style='color:green'> Connexion MySQL réussie !</p>";
     
     // Créer une table et insérer des données
     $conn->query("CREATE TABLE IF NOT EXISTS visits (id INT AUTO_INCREMENT PRIMARY KEY, timestamp DATETIME)");
@@ -23,7 +23,7 @@ try {
     
     $conn->close();
 } catch (Exception $e) {
-    echo "<p style='color:red'>❌ Erreur : " . $e->getMessage() . "</p>";
+    echo "<p style='color:red'> Erreur : " . $e->getMessage() . "</p>";
 }
 
 phpinfo();
