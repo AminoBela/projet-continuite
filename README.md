@@ -1,93 +1,60 @@
-#  Projet de Surveillance d'Infrastructure
+# Projet Continuité de Service - TechCommerce Solutions
 
-Infrastructure dockerisée avec application n-tiers, métrologie et automatisation.
+Projet réalisé dans le cadre du module "Continuité de Service" (BUT Informatique). Ce dépôt contient l'infrastructure conteneurisée simulant un environnement de production critique, sa surveillance et son automatisation.
 
-##  Architecture
+**Auteurs (Groupe 2) :**
+* Belalia
+* Eyer
+* Candido Della Hora
+* Salvo
 
-- **Web** : Apache + PHP
-- **BDD** : MySQL 8.0
-- **Métrologie** : Prometheus + Exporters
-- **Visualisation** : Grafana
-- **Automatisation** : Rundeck
+## 🏗 Architecture
 
-##  Installation rapide
+Le projet déploie une application n-tiers surveillée et automatisée via Docker Compose :
+
+* **Application Web** : Serveur Apache + PHP 8.2 (Simule l'activité "Hébergement sécurisé").
+* **Base de Données** : MySQL 8.0 (Stockage des visites/données).
+* **Métrologie (Monitoring)** :
+    * **Prometheus** : Collecte des métriques (Scraping toutes les 15s).
+    * **Exporters** : `mysqld-exporter` (métriques BDD) et `node-exporter` (métriques serveur).
+    * **Grafana** : Visualisation des données (Dashboard ID 14057).
+* **Automatisation** :
+    * **Rundeck** : Ordonnanceur de tâches pour la reprise d'activité (Job de redémarrage automatique).
+
+## 🚀 Installation et Démarrage
+
+### Prérequis
+* Docker & Docker Compose installés.
+* Ports 8888, 3307, 9091, 3001, 4441 libres.
+
+### Démarrage rapide
+Un script d'automatisation est fourni pour vérifier l'environnement et lancer la stack :
+
 ```bash
-# Prérequis
-sudo apt install docker.io docker-compose -y
-sudo usermod -aG docker $USER
-
-# Déploiement
-mkdir -p ~/projet-surveillance/{app,prometheus,grafana,rundeck}
-cd ~/projet-surveillance
-docker compose up -d
-
-# Configuration MySQL pour Rundeck
-docker exec -it mysql_db mysql -uroot -prootpassword -e "
-CREATE DATABASE rundeck;
-GRANT ALL PRIVILEGES ON rundeck.* TO 'user'@'%';
-FLUSH PRIVILEGES;"
-
-# Permissions Docker
-sudo chmod 666 /var/run/docker.sock
+chmod +x start.sh
+./start.sh
 ```
 
-##  Accès
+Ou manuellement:
 
-| Service | URL | Login |
-|---------|-----|-------|
-| Application | http://localhost:8080 | - |
-| Grafana | http://localhost:3000 | admin/admin |
-| Prometheus | http://localhost:9090 | - |
-| Rundeck | http://localhost:4440 | admin/admin |
-
-##  Configuration Grafana
-
-1. Data sources → Add Prometheus
-2. URL : `http://prometheus:9090`
-3. Métriques utiles :
-   - `mysql_up` : Statut MySQL
-   - `mysql_global_status_threads_connected` : Connexions
-   - `rate(mysql_global_status_questions[1m])` : Requêtes/s
-
-##  Job Rundeck (Redémarrage MySQL)
-
-**Script** :
 ```bash
-#!/bin/bash
-echo " Redémarrage MySQL..."
-docker restart mysql_db
-sleep 15
-docker exec mysql_db mysqladmin ping -h localhost -uuser -ppassword
-echo " Terminé"
+docker compose up -d --build
 ```
 
-**Planification** : `0 0 2 * * ? *` (2h du matin)
+## 📊 Accès aux Services
 
-##  Tests
-```bash
-# Vérifier les conteneurs
-docker compose ps
+Application web : http://localhost:8888
+Grafana : http://localhost:3001
+Rundeck : http://localhost:4441
+Prometheus : http://localhost:9091
 
-# Tester l'application
-curl http://localhost:8080
+## 🧪 Simulation de Trafic
 
-# Tester les métriques
-curl http://localhost:9104/metrics
-```
+Pour générer des données dans Grafana, utilisez les scripts fournis :
+1. Trafic régulier : ./traffic.sh (Simule des visites utilisateurs).
+1. Stress Test : for i in {1..100}; do curl -s "http://localhost:8888" > /dev/null & done
 
-##  Commandes utiles
-```bash
-docker compose logs -f [service]    # Logs
-docker compose restart [service]    # Redémarrer
-docker compose down                 # Arrêter
-docker stats                        # Ressources
-```
+## ⚙️ Configuration Spécifique
 
-##  Structure
-```
-projet-surveillance/
-├── app/index.php
-├── prometheus/prometheus.yml
-├── rundeck/Dockerfile
-└── docker-compose.yml
-```
+1. Rundeck : Le conteneur Rundeck possède le client Docker installé et le socket Docker monté (/var/run/docker.sock) pour pouvoir piloter les conteneurs voisins (Redémarrage MySQL).
+2. MySQL : Initialisation automatique via mysql/init.sql pour créer l'utilisateur dédié à l'exporter Prometheus.

@@ -31,7 +31,6 @@ services:
       timeout: 10s
       retries: 3
 
-
   mysql:
     image: mysql:8.0
     container_name: mysql_db
@@ -44,6 +43,7 @@ services:
       - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - monitoring
     restart: unless-stopped
@@ -110,8 +110,10 @@ services:
     container_name: mysql_exporter
     ports:
       - "9105:9104"
-    environment:
-      DATA_SOURCE_NAME: "user:password@(mysql:3306)/"
+    # Plus besoin de DATA_SOURCE_NAME ici, on utilise le fichier my.cnf
+    volumes:
+      # Montage du fichier de configuration client MySQL
+      - ./prometheus/my.cnf:/.my.cnf
     depends_on:
       mysql:
         condition: service_healthy
@@ -119,6 +121,7 @@ services:
       - monitoring
     restart: unless-stopped
     command:
+      - --config.my-cnf=/.my.cnf
       - --collect.info_schema.tables
       - --collect.info_schema.innodb_tablespaces
       - --collect.info_schema.innodb_metrics
@@ -130,9 +133,6 @@ services:
       - --collect.perf_schema.eventswaits
       - --collect.auto_increment.columns
       - --collect.binlog_size
-      - --collect.perf_schema.tableiostat
-      - --collect.perf_schema.indexiowaits
-
 
   node-exporter:
     image: prom/node-exporter:latest
@@ -154,7 +154,7 @@ services:
     pid: host
 
   rundeck:
-    image: rundeck/rundeck:5.0.0
+    build: ./rundeck
     container_name: rundeck
     ports:
       - "4441:4440"
@@ -181,27 +181,3 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-
-
-  rundeck-init:
-    image: mysql:8.0
-    container_name: rundeck_init
-    networks:
-      - monitoring
-    depends_on:
-      mysql:
-        condition: service_healthy
-    entrypoint: >
-      bash -c "
-      echo '⏳ Attente de MySQL...' &&
-      sleep 10 &&
-      echo '📋 Création de la base Rundeck...' &&
-      mysql -h mysql -uroot -prootpassword -e \"
-        CREATE DATABASE IF NOT EXISTS rundeck CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-        GRANT ALL PRIVILEGES ON rundeck.* TO 'user'@'%';
-        FLUSH PRIVILEGES;
-        SHOW DATABASES;
-      \" &&
-      echo ' Base Rundeck créée avec succès!'
-      "
-    restart: "no"
